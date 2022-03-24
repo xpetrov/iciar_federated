@@ -4,7 +4,7 @@ from multiprocessing import Process
 from typing import Dict, Optional, Tuple
 
 import tensorflow as tf
-from tensorflow.keras import Model, layers, models,\
+from keras import Model, layers, models,\
     preprocessing, metrics, losses, optimizers
 import tensorflow_addons as tfa
 
@@ -48,7 +48,7 @@ def load_directory(id: int, train: bool) -> tf.data.Dataset:
     )
 
 
-def compute_mean_var(dataset: tf.data.Dataset) -> tuple[float, float]:
+def compute_mean_var(dataset: tf.data.Dataset) -> Tuple[float, float]:
     channels_sum, channels_squared_sum, num_batches = 0, 0, 0
     for data, _ in dataset:
         channels_sum += tf.reduce_mean(data,
