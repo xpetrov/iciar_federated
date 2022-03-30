@@ -1,11 +1,12 @@
 import os
+from random import shuffle
 import time
 from multiprocessing import Process
 from typing import Dict, Optional, Tuple
 
 import tensorflow as tf
-from keras import Model, layers, models,\
-    preprocessing, metrics, losses, optimizers
+from tensorflow.keras import Model, layers, models,\
+    preprocessing, metrics, losses, optimizers, utils
 import tensorflow_addons as tfa
 
 import flwr as fl
@@ -17,34 +18,48 @@ from wandb.keras import WandbCallback
 
 # Make TensorFlow log less verbose
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+WANDB_KEY = '70fc9e3697c791bb8e0bd252af2721808872bce9'
 
 config = {
     #'q_param': 1.,
     'num_clients': 2,
-    'batch_size': 4,
+    'batch_size': 8,
     'num_rounds': 60,
     'epochs_per_round': 1,
-    'validation_split': .2,
+    #'validation_split': .2,
     'seed': 41,
     'dropout_fc_1': .25,
     'dropout_fc_2': .25,
-    'f1_average': 'macro'
+    'f1_average': 'macro',
+    'centralizaed_eval': True,
+    'wandb': {
+        'project': 'balanced',
+        'entity': 'xpetrov'
+    }
 }
 
+DATA_ROOT = 'D:\\xpetrov\\ICIAR2018_BACH_Challenge\\'
 
-def load_directory(id: int, train: bool) -> tf.data.Dataset:
-    subset = "training" if train else "validation"
+
+def load_concrete_dataset(site_id: int, subset: str) -> tf.data.Dataset:
+    shuffle = True if subset=='train' else False
     return preprocessing.image_dataset_from_directory(
-        'D:\\BACH_dataset\\ICIAR2018_BACH_Challenge\\Photos_balanced_sites_png\\site' +
-        str(id),
+        DATA_ROOT + 'federated\\balanced\\site' + str(site_id) + '\\' + subset,
         label_mode='categorical',
         class_names=["Benign", "InSitu", "Invasive", "Normal"],
         batch_size=config['batch_size'],
         image_size=(512, 512),
-        shuffle=True,
-        validation_split=config['validation_split'],
-        seed=config['seed'],
-        subset=subset
+        shuffle=shuffle,
+        seed=config['seed']
+    )
+
+
+def load_dataset(site_id: int) -> Tuple[
+    tf.data.Dataset, tf.data.Dataset, tf.data.Dataset]:
+    return (
+        load_concrete_dataset(site_id, 'train'),
+        load_concrete_dataset(site_id, 'valid'),
+        load_concrete_dataset(site_id, 'test')
     )
 
 
@@ -114,30 +129,34 @@ def build_araujo_model() -> Model:
     inputs = tf.keras.Input(shape=(512, 512, 3))
     x = preprocessing_layer(inputs)
     outputs = model(x)
-    model = tf.keras.Model(inputs, outputs)
+    model = Model(inputs, outputs)
     return model
 
 
 def start_server(num_rounds, num_clients, fraction_fit=1.0) -> None:
-
-    model = build_araujo_model()
-    model.compile(optimizer=optimizers.Adam(1e-4),
-                  loss=losses.CategoricalCrossentropy(from_logits=False),
-                  metrics=[
-                      metrics.CategoricalAccuracy(),
-                      tfa.metrics.F1Score(num_classes=4, average=config['f1_average'])])
+    model = None
+    if config['centralizaed_eval'] is True:
+        model = build_araujo_model()
+        model.compile(optimizer=optimizers.Adam(1e-4),
+                    loss=losses.CategoricalCrossentropy(from_logits=False),
+                    metrics=[
+                        metrics.CategoricalAccuracy(),
+                        tfa.metrics.F1Score(num_classes=4, average=config['f1_average'])])
     
     def fit_config(rnd: int):
         return config.copy()
 
-    def get_eval_fn(model: Model):
+    def get_eval_fn(model: Model = None):
         """Return an evaluation function for server-side evaluation."""
+        if model is None:
+            print("SERVER: No evaluation defined. Skip dataset loading.")
+            return None
         dataset_id = config['num_clients']+1
-        if (dataset_id > 4):
+        if dataset_id > 4:
             raise ValueError(f"No available dataset with id={dataset_id}")
         print("SERVER: Loading dataset...")
-        dataset = (load_directory(dataset_id, train=True),
-                   load_directory(dataset_id, train=False))
+        dataset = (load_concrete_dataset(num_clients+1, 'train'),
+                   load_concrete_dataset(num_clients+1, 'valid'))
 
         dist, dist_normed = get_data_distribution(dataset[1])
         print(f"SERVER: Validation Data distribution - {dist} ({dist_normed})")
@@ -174,26 +193,32 @@ def start_server(num_rounds, num_clients, fraction_fit=1.0) -> None:
         #    model.get_weights()),
         )
 
-    wandb.login()
-    wandb.init(project="bach_fedavg", entity="xpetrov")
-    wandb.config = config
+    if (config['centralizaed_eval'] is True):
+        wandb.login(key=WANDB_KEY)
+        wandb.init(
+            project=config['wandb']['project'],
+            entity=config['wandb']['entity'])
+        wandb.config = config
 
     print("SERVER: Starting the server...")
     # Exposes the server by default on port 8080
-    fl.server.start_server(strategy=strategy, config={
-                           "num_rounds": num_rounds})
+    fl.server.start_server(
+        server_address="127.0.0.1:8080",
+        strategy=strategy,
+        config={"num_rounds": num_rounds})
 
 
 def start_client(client_id) -> None:
 
     print("CLIENT #{}: Loading dataset...".format(client_id))
-    dataset = (load_directory(client_id, train=True),
-               load_directory(client_id, train=False))
+
+    dataset = load_dataset(client_id)
     print("CLIENT #{}: Computing mean and variance...".format(client_id))
     mean, variance = compute_mean_var(dataset[0])
     print("CLIENT #{}: Mean: {}, Variance: {}".format(client_id, mean, variance))
     train_dataset = preprocess(dataset[0], mean, variance)
     valid_dataset = preprocess(dataset[1], mean, variance)
+    #test_dataset = preprocess(dataset[2], mean, variance)
 
     print("CLIENT #{}: Building the model...".format(client_id))
     model = build_araujo_model()
@@ -237,8 +262,10 @@ def start_client(client_id) -> None:
             print(metrics_dict)
             return metrics_dict['loss'], len(valid_dataset), metrics_dict
 
-    wandb.login()
-    wandb.init(project="bach_fedavg", entity="xpetrov")
+    wandb.login(key=WANDB_KEY)
+    wandb.init(
+            project=config['wandb']['project'],
+            entity=config['wandb']['entity'])
     wandb.config = config
 
     print("CLIENT #{}: Starting the client...".format(client_id))
@@ -254,7 +281,8 @@ def run_simulation(num_rounds, num_clients):
     server_process.start()
     processes.append(server_process)
 
-    time.sleep(120)  # should be enough for the server to initialize
+    sleeptime = 120 if config['centralizaed_eval'] is True else 30
+    time.sleep(sleeptime)  # should be enough for the server to initialize
 
     for client_id in range(1, num_clients+1):
         client_process = Process(

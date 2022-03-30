@@ -1,5 +1,5 @@
 torch == 1.11.0
-tensorflow == 2.8.0
+tensorflow == 2.7.0
 tensorflow-addons == 0.15.0
 flwr == 0.18.0
 wandb == 0.12.7
