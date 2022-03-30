@@ -14,20 +14,24 @@ PARENT_DIR = 'D:/BACH_dataset/ICIAR2018_BACH_Challenge/Federated_Quantity_Skew'
 
 dataset_definition = [
     {'Benign': 17, 'InSitu': 25, 'Invasive': 25, 'Normal': 25},# train
+    {'Benign': 4, 'InSitu': 4, 'Invasive': 4, 'Normal': 4},# valid
+    {'Benign': 2, 'InSitu': 2, 'Invasive': 2, 'Normal': 2},# test
+
+    {'Benign': 25, 'InSitu': 25, 'Invasive': 25, 'Normal': 25},# train
     {'Benign': 4, 'InSitu': 0, 'Invasive': 0, 'Normal': 0},# valid
-    {'Benign': 4, 'InSitu': 0, 'Invasive': 0, 'Normal': 0},# test
+    {'Benign': 2, 'InSitu': 0, 'Invasive': 0, 'Normal': 0},# test
 
     {'Benign': 25, 'InSitu': 25, 'Invasive': 25, 'Normal': 25},# train
-    {'Benign': 0, 'InSitu': 0, 'Invasive': 0, 'Normal': 0},# valid
-    {'Benign': 0, 'InSitu': 0, 'Invasive': 0, 'Normal': 0},# test
+    {'Benign': 4, 'InSitu': 0, 'Invasive': 0, 'Normal': 0},# valid
+    {'Benign': 2, 'InSitu': 0, 'Invasive': 0, 'Normal': 0},# test
 
     {'Benign': 25, 'InSitu': 25, 'Invasive': 25, 'Normal': 25},# train
-    {'Benign': 0, 'InSitu': 0, 'Invasive': 0, 'Normal': 0},# valid
-    {'Benign': 0, 'InSitu': 0, 'Invasive': 0, 'Normal': 0},# test
+    {'Benign': 4, 'InSitu': 0, 'Invasive': 0, 'Normal': 0},# valid
+    {'Benign': 2, 'InSitu': 0, 'Invasive': 0, 'Normal': 0}, # test
 
-    {'Benign': 25, 'InSitu': 25, 'Invasive': 25, 'Normal': 25},# train
-    {'Benign': 0, 'InSitu': 0, 'Invasive': 0, 'Normal': 0},# valid
-    {'Benign': 0, 'InSitu': 0, 'Invasive': 0, 'Normal': 0}, # test
+    {'Benign': 0, 'InSitu': 0, 'Invasive': 0, 'Normal': 0},# train
+    {'Benign': 4, 'InSitu': 4, 'Invasive': 4, 'Normal': 4},# valid
+    {'Benign': 2, 'InSitu': 2, 'Invasive': 2, 'Normal': 2}, # test
 ]
 # -----------------------------------------------------------------------------
 # const values, do not change!
