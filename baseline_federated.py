@@ -16,26 +16,26 @@ from flwr.server.strategy import FedAvg, QFedAvg
 import wandb
 from wandb.keras import WandbCallback
 
+from qfedadam import QFedAdam
+
 # Make TensorFlow log less verbose
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 WANDB_KEY = '70fc9e3697c791bb8e0bd252af2721808872bce9'
 
 config = {
-    #'q_param': 1.,
-    'num_clients': 2,
-    'batch_size': 8,
-    'num_rounds': 60,
+    'q_param': 0.2,
+    'num_clients': 3,
+    'batch_size': 4,
+    'num_rounds': 30,
     'epochs_per_round': 1,
     #'validation_split': .2,
     'seed': 41,
     'dropout_fc_1': .25,
     'dropout_fc_2': .25,
     'f1_average': 'macro',
-    'centralizaed_eval': True,
-    'wandb': {
-        'project': 'balanced',
-        'entity': 'xpetrov'
-    }
+    'centralizaed_eval': False,
+    'wandb_project': 'balanced_qfedavg',
+    'wandb_entity': 'xpetrov'
 }
 
 DATA_ROOT = 'D:\\xpetrov\\ICIAR2018_BACH_Challenge\\'
@@ -133,9 +133,9 @@ def build_araujo_model() -> Model:
     return model
 
 
-def start_server(num_rounds, num_clients, fraction_fit=1.0) -> None:
+def start_server(num_rounds, num_clients) -> None:
     model = None
-    if config['centralizaed_eval'] is True:
+    if config['centralizaed_eval']:
         model = build_araujo_model()
         model.compile(optimizer=optimizers.Adam(1e-4),
                     loss=losses.CategoricalCrossentropy(from_logits=False),
@@ -146,9 +146,9 @@ def start_server(num_rounds, num_clients, fraction_fit=1.0) -> None:
     def fit_config(rnd: int):
         return config.copy()
 
-    def get_eval_fn(model: Model = None):
+    def get_eval_fn(model: Model):
         """Return an evaluation function for server-side evaluation."""
-        if model is None:
+        if config['centralizaed_eval'] is False:
             print("SERVER: No evaluation defined. Skip dataset loading.")
             return None
         dataset_id = config['num_clients']+1
@@ -183,27 +183,29 @@ def start_server(num_rounds, num_clients, fraction_fit=1.0) -> None:
 
         return evaluate
 
-    strategy = FedAvg(
-        #q_param=config["q_param"],
+    strategy = QFedAvg(
+        q_param=config["q_param"],
         min_available_clients=num_clients,
-        fraction_fit=fraction_fit,
+        #fraction_fit=1.0,
+        #fraction_eval=1.0,
+        min_fit_clients=num_clients,
+        min_eval_clients=num_clients,
         on_fit_config_fn=fit_config,
-        eval_fn=get_eval_fn(model),
-        # initial_parameters=weights_to_parameters(
+        eval_fn=None if model is None else get_eval_fn(model),
+        #initial_parameters=weights_to_parameters(
         #    model.get_weights()),
         )
 
     if (config['centralizaed_eval'] is True):
         wandb.login(key=WANDB_KEY)
         wandb.init(
-            project=config['wandb']['project'],
-            entity=config['wandb']['entity'])
+            project=config['wandb_project'],
+            entity=config['wandb_entity'])
         wandb.config = config
 
     print("SERVER: Starting the server...")
     # Exposes the server by default on port 8080
     fl.server.start_server(
-        server_address="127.0.0.1:8080",
         strategy=strategy,
         config={"num_rounds": num_rounds})
 
@@ -264,8 +266,8 @@ def start_client(client_id) -> None:
 
     wandb.login(key=WANDB_KEY)
     wandb.init(
-            project=config['wandb']['project'],
-            entity=config['wandb']['entity'])
+            project=config['wandb_project'],
+            entity=config['wandb_entity'])
     wandb.config = config
 
     print("CLIENT #{}: Starting the client...".format(client_id))
@@ -281,7 +283,7 @@ def run_simulation(num_rounds, num_clients):
     server_process.start()
     processes.append(server_process)
 
-    sleeptime = 120 if config['centralizaed_eval'] is True else 30
+    sleeptime = 60 if config['centralizaed_eval'] is True else 30
     time.sleep(sleeptime)  # should be enough for the server to initialize
 
     for client_id in range(1, num_clients+1):

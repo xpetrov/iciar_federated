@@ -9,29 +9,26 @@ from datetime import datetime
 
 # user input ------------------------------------------------------------------
 BATCH_SIZE = 2
-DATASET_ROOT = 'D:/BACH_dataset/ICIAR2018_BACH_Challenge/Photos'
-PARENT_DIR = 'D:/BACH_dataset/ICIAR2018_BACH_Challenge/Federated_Quantity_Skew'
+DATASET_ROOT = 'D:\\xpetrov\\ICIAR2018_BACH_Challenge\\Photos'
+PARENT_DIR = 'D:\\xpetrov\\ICIAR2018_BACH_Challenge\\federated\\balanced_3clients+server'
 
 dataset_definition = [
-    {'Benign': 17, 'InSitu': 25, 'Invasive': 25, 'Normal': 25},# train
-    {'Benign': 4, 'InSitu': 4, 'Invasive': 4, 'Normal': 4},# valid
-    {'Benign': 2, 'InSitu': 2, 'Invasive': 2, 'Normal': 2},# test
-
-    {'Benign': 25, 'InSitu': 25, 'Invasive': 25, 'Normal': 25},# train
-    {'Benign': 4, 'InSitu': 0, 'Invasive': 0, 'Normal': 0},# valid
-    {'Benign': 2, 'InSitu': 0, 'Invasive': 0, 'Normal': 0},# test
-
-    {'Benign': 25, 'InSitu': 25, 'Invasive': 25, 'Normal': 25},# train
-    {'Benign': 4, 'InSitu': 0, 'Invasive': 0, 'Normal': 0},# valid
-    {'Benign': 2, 'InSitu': 0, 'Invasive': 0, 'Normal': 0},# test
-
-    {'Benign': 25, 'InSitu': 25, 'Invasive': 25, 'Normal': 25},# train
-    {'Benign': 4, 'InSitu': 0, 'Invasive': 0, 'Normal': 0},# valid
-    {'Benign': 2, 'InSitu': 0, 'Invasive': 0, 'Normal': 0}, # test
-
+    # clietn 1
+    {'Benign': 20, 'InSitu': 20, 'Invasive': 20, 'Normal': 20},# train
+    {'Benign': 6, 'InSitu': 6, 'Invasive': 6, 'Normal': 6},# valid
+    {'Benign': 4, 'InSitu': 4, 'Invasive': 4, 'Normal': 4},# test
+    # client 2
+    {'Benign': 20, 'InSitu': 20, 'Invasive': 20, 'Normal': 20},# train
+    {'Benign': 6, 'InSitu': 6, 'Invasive': 6, 'Normal': 6},# valid
+    {'Benign': 4, 'InSitu': 4, 'Invasive': 4, 'Normal': 4},# test
+    # client 3
+    {'Benign': 20, 'InSitu': 20, 'Invasive': 20, 'Normal': 20},# train
+    {'Benign': 6, 'InSitu': 6, 'Invasive': 6, 'Normal': 6},# valid
+    {'Benign': 4, 'InSitu': 4, 'Invasive': 4, 'Normal': 4},# test
+    # server
     {'Benign': 0, 'InSitu': 0, 'Invasive': 0, 'Normal': 0},# train
-    {'Benign': 4, 'InSitu': 4, 'Invasive': 4, 'Normal': 4},# valid
-    {'Benign': 2, 'InSitu': 2, 'Invasive': 2, 'Normal': 2}, # test
+    {'Benign': 6, 'InSitu': 6, 'Invasive': 6, 'Normal': 6},# valid
+    {'Benign': 4, 'InSitu': 4, 'Invasive': 4, 'Normal': 4},# test
 ]
 # -----------------------------------------------------------------------------
 # const values, do not change!
