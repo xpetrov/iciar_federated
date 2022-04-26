@@ -4,11 +4,12 @@ from wandb.keras import WandbCallback
 import tensorflow as tf
 from tensorflow_addons.metrics import F1Score
 from tensorflow.keras import layers, models,\
-    preprocessing, metrics, losses, optimizers, callbacks
+    preprocessing, metrics, losses, optimizers, callbacks, applications
 import numpy as np
 
+
 sweep_config = {
-    'name': 'BACH-centralized-extended',
+    'name': 'BACH-centralized-vgg',
     'method': 'grid',
     'metric': {
         'goal': 'minimize',
@@ -18,24 +19,19 @@ sweep_config = {
         'batch_size': {'value': 4},
         'epochs': {'value': 50},
         'optimizer': {'value': 'adam'},
-        'learning_rate': {'values': [1e-7, 1e-6, 1e-5, 1e-4, 1e-3]},
+        'learning_rate': {'values': [1e-9, 1e-8, 1e-7, 1e-6, 1e-5, 1e-4, 1e-3]},
         'dropout_fc_1': {'values': [.0, .25, .50]},
         'dropout_fc_2': {'values': [.0, .25, .50]}
-    },
-    # 'early_terminate': {
-    #    'type': 'hyperband',
-    #    'min_iter': 3,
-    #    'eta': 3
-    # }
+    }
 }
 
 
 def main():
     wandb.login()
-    sweep_id = wandb.sweep(sweep_config, project="centralized-baseline")
-    
+    sweep_id = wandb.sweep(sweep_config, project="vgg16")
+
     print("Loading dataset...")
-    batch_size = sweep_config['parameters']['batch_size']['value']
+    batch_size = 4
     train_dataset, valid_dataset = load_dataset(batch_size=batch_size, seed=42)
     
     print("Checking data distribution for training...")
@@ -53,7 +49,7 @@ def main():
         with wandb.init(config=config):
             config = wandb.config
 
-            model = build_model(config, mean=mean, variance=variance)
+            model = build_vgg_model(config, mean=mean, variance=variance)
             optimizer = build_optimizer(config.optimizer, config.learning_rate)
 
             model.compile(optimizer=optimizer,
@@ -69,7 +65,7 @@ def main():
                       validation_data=valid_dataset,
                       verbose=2,  # single line per epoch
                       callbacks=[
-                          WandbCallback(monitor="val_loss"),
+                          WandbCallback(monitor="val_loss", save_model=False, save_graph=False),
                           early_stopping_fn])
 
     wandb.agent(sweep_id, train, count=45)
@@ -81,7 +77,7 @@ def load_dataset(batch_size, seed=int(np.random.random()*100), validation_split=
         label_mode='categorical',
         class_names=["Benign", "InSitu", "Invasive", "Normal"],
         batch_size=batch_size,
-        image_size=(512, 512),
+        image_size=(224, 224),
         shuffle=True,
         #validation_split=validation_split,
         seed=seed,
@@ -92,7 +88,7 @@ def load_dataset(batch_size, seed=int(np.random.random()*100), validation_split=
         label_mode='categorical',
         class_names=["Benign", "InSitu", "Invasive", "Normal"],
         batch_size=batch_size,
-        image_size=(512, 512),
+        image_size=(224, 224),
         shuffle=True,
         #validation_split=validation_split,
         seed=seed,
@@ -126,49 +122,6 @@ def get_data_distribution(dataset):
     return hist.numpy(), hist_normalized.numpy()
 
 
-def build_model(config, mean, variance):
-    # Preprocessing layer
-    preprocessing_layer = tf.keras.Sequential([
-        layers.experimental.preprocessing.Rescaling(scale=1./255),
-        layers.experimental.preprocessing.Normalization(
-            mean=mean, variance=variance),
-        layers.experimental.preprocessing.RandomFlip("horizontal_and_vertical")
-    ])
-
-    # Araujo Net
-    model = models.Sequential()
-    model.add(layers.Conv2D(16, 3, activation='relu',
-              kernel_initializer='he_uniform', input_shape=(512, 512, 3)))
-    model.add(layers.MaxPooling2D((3, 3)))
-    model.add(layers.Conv2D(32, 3, activation='relu',
-              kernel_initializer='he_uniform'))
-    model.add(layers.MaxPooling2D((2, 2)))
-    model.add(layers.Conv2D(64, 3, activation='relu',
-              padding='same', kernel_initializer='he_uniform'))
-    model.add(layers.MaxPooling2D((2, 2)))
-    model.add(layers.Conv2D(64, 3, activation='relu',
-              padding='same', kernel_initializer='he_uniform'))
-    model.add(layers.MaxPooling2D((3, 3)))
-    model.add(layers.Conv2D(32, 3, activation='relu',
-              kernel_initializer='he_uniform'))
-    model.add(layers.MaxPooling2D((3, 3)))
-    model.add(layers.Flatten())
-    model.add(layers.Dropout(rate=config.dropout_fc_1))
-    model.add(layers.Dense(256, activation='relu',
-              kernel_initializer='he_uniform'))
-    model.add(layers.Dropout(rate=config.dropout_fc_2))
-    model.add(layers.Dense(128, activation='relu',
-              kernel_initializer='he_uniform'))
-    model.add(layers.Dense(4, activation='softmax'))
-
-    # Creates a model (preprocessing layer + Araujo Net)
-    inputs = tf.keras.Input(shape=(512, 512, 3))
-    x = preprocessing_layer(inputs)
-    outputs = model(x)
-    model = tf.keras.Model(inputs, outputs)
-    return model
-
-
 def build_optimizer(name, learning_rate):
     optim = None
     if name == "adadelta":
@@ -182,6 +135,43 @@ def build_optimizer(name, learning_rate):
         )
     print(optim.get_config())
     return optim
+
+
+def build_vgg_model(config, mean, variance):
+    preprocessing_layer = tf.keras.Sequential([
+        layers.experimental.preprocessing.Rescaling(scale=1./255),
+        layers.experimental.preprocessing.Normalization(
+            mean=mean, variance=variance),
+        layers.experimental.preprocessing.RandomFlip("horizontal_and_vertical"),
+        layers.experimental.preprocessing.RandomRotation(
+            0.03, fill_mode='reflect', interpolation='bilinear') # [-3% * 2pi, 3% * 2pi]
+    ])
+
+    vgg16_pretrained = applications.VGG16(
+        include_top=False,
+        weights="imagenet",
+        input_shape=(224, 224, 3)
+    )
+    vgg16_pretrained.trainable = False
+
+    custom_top = models.Sequential()
+    custom_top.add(layers.Flatten())
+    custom_top.add(layers.Dropout(rate=config.dropout_fc_1))
+    custom_top.add(layers.Dense(4096, activation='relu',
+              kernel_initializer='he_uniform'))
+    custom_top.add(layers.Dropout(rate=config.dropout_fc_2))
+    custom_top.add(layers.Dense(4096, activation='relu',
+              kernel_initializer='he_uniform'))
+    custom_top.add(layers.Dense(4, activation='softmax'))
+
+    inputs = tf.keras.Input(shape=(224, 224, 3))
+    x = preprocessing_layer(inputs)
+    #x = applications.vgg16.preprocess_input(x)
+    x = vgg16_pretrained(x, training=False)
+    outputs = custom_top(x)
+    model = tf.keras.Model(inputs, outputs)
+    model.summary()
+    return model
 
 
 if __name__ == '__main__':

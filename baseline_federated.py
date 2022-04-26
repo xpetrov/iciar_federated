@@ -3,7 +3,7 @@ from random import shuffle
 import time
 from multiprocessing import Process
 from typing import Dict, Optional, Tuple
-
+import inspect
 import tensorflow as tf
 from tensorflow.keras import Model, layers, models,\
     preprocessing, metrics, losses, optimizers, utils
@@ -11,7 +11,7 @@ import tensorflow_addons as tfa
 
 import flwr as fl
 from flwr.common import Weights, Scalar, weights_to_parameters
-from flwr.server.strategy import FedAvg, QFedAvg
+from flwr.server.strategy import FedAvg, QFedAvg, FedAdam
 
 import wandb
 from wandb.keras import WandbCallback
@@ -26,25 +26,27 @@ config = {
     'q_param': 0.2,
     'num_clients': 3,
     'batch_size': 4,
-    'num_rounds': 30,
+    'num_rounds': 60,
     'epochs_per_round': 1,
     #'validation_split': .2,
+    'server-side_lr': 1e-4, # beta, defaults 1e-1
     'seed': 41,
     'dropout_fc_1': .25,
     'dropout_fc_2': .25,
     'f1_average': 'macro',
-    'centralizaed_eval': False,
-    'wandb_project': 'balanced_qfedavg',
+    'centralizaed_eval': True,
+    'wandb_project': 'balanced_qfedadam_0.2_1e-4',
     'wandb_entity': 'xpetrov'
 }
 
 DATA_ROOT = 'D:\\xpetrov\\ICIAR2018_BACH_Challenge\\'
+DATASET = 'federated\\balanced_3clients+server\\'
 
 
 def load_concrete_dataset(site_id: int, subset: str) -> tf.data.Dataset:
     shuffle = True if subset=='train' else False
     return preprocessing.image_dataset_from_directory(
-        DATA_ROOT + 'federated\\balanced\\site' + str(site_id) + '\\' + subset,
+        DATA_ROOT + DATASET + 'site' + str(site_id) + '\\' + subset,
         label_mode='categorical',
         class_names=["Benign", "InSitu", "Invasive", "Normal"],
         batch_size=config['batch_size'],
@@ -155,45 +157,58 @@ def start_server(num_rounds, num_clients) -> None:
         if dataset_id > 4:
             raise ValueError(f"No available dataset with id={dataset_id}")
         print("SERVER: Loading dataset...")
-        dataset = (load_concrete_dataset(num_clients+1, 'train'),
-                   load_concrete_dataset(num_clients+1, 'valid'))
+        valid_dataset = load_concrete_dataset(dataset_id, 'valid')
 
-        dist, dist_normed = get_data_distribution(dataset[1])
+        dist, dist_normed = get_data_distribution(valid_dataset)
         print(f"SERVER: Validation Data distribution - {dist} ({dist_normed})")
 
         print("SERVER: Computing mean and variance...")
-        mean, variance = compute_mean_var(dataset[0])
+        mean = tf.constant([177.39793, 144.19339, 171.54733])
+        variance = tf.constant([2153.0625, 3023.4922, 1747.2871])
+        #mean, variance = compute_mean_var(valid_dataset)
         print("SERVER: Mean: {}, Variance: {}".format(mean, variance))
-        valid_dataset = preprocess(dataset[1], mean, variance)
+        valid_dataset = preprocess(valid_dataset, mean, variance)
 
         def evaluate(weights: Weights) -> Optional[Tuple[float, Dict[str, Scalar]]]:
             model.set_weights(weights)
             metrics_dict = model.evaluate(
                 valid_dataset, verbose=2, return_dict=True)
-            for _ in range(config['epochs_per_round']-1):
-                # log an empty dict *epr-1* times to increase wandb step
-                # in order to allign server's log graph with clients' logs
-                wandb.log({})
-            wandb.log({
-                'val_loss': metrics_dict['loss'],
-                'val_categorical_accuracy': metrics_dict['categorical_accuracy'],
-                'val_f1_score': metrics_dict['f1_score']
-            })
+
+            frm = inspect.stack()[2]
+            mod = inspect.getmodule(frm[0])
+            if (mod.__name__ == 'flwr.server.server'):
+                for _ in range(config['epochs_per_round']-1):
+                    # log an empty dict *epr-1* times to increase wandb step
+                    # in order to allign server's log graph with clients' logs
+                    wandb.log({})
+                wandb.log({
+                    'val_loss': metrics_dict['loss'],
+                    'val_categorical_accuracy': metrics_dict['categorical_accuracy'],
+                    'val_f1_score': metrics_dict['f1_score']
+                })
+
+                # saving model weights
+                save_dir = os.path.join("D:\\xpetrov", "models", config['wandb_project'])
+                os.makedirs(save_dir, exist_ok=True)
+                model_id = len([name for name in os.listdir(save_dir)]) + 1
+                filepath = os.path.join(save_dir, f"model_{model_id}.h5")
+                print(f"SERVER: Saving model weights to {filepath}")
+                model.save_weights(filepath, overwrite=True)
+            
             return metrics_dict['loss'], metrics_dict
 
         return evaluate
 
-    strategy = QFedAvg(
+    strategy = QFedAdam(
         q_param=config["q_param"],
         min_available_clients=num_clients,
-        #fraction_fit=1.0,
-        #fraction_eval=1.0,
         min_fit_clients=num_clients,
         min_eval_clients=num_clients,
         on_fit_config_fn=fit_config,
         eval_fn=None if model is None else get_eval_fn(model),
-        #initial_parameters=weights_to_parameters(
-        #    model.get_weights()),
+        eta = config['server-side_lr'],
+        initial_parameters=weights_to_parameters(
+            model.get_weights()),
         )
 
     if (config['centralizaed_eval'] is True):

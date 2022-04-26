@@ -69,10 +69,15 @@ class CropPatches(object):
         patches = patches.contiguous().view(-1, kc, kh, kw)
         return patches
 
+rotater = transforms.RandomRotation(
+    degrees=5,
+    interpolation=transforms.InterpolationMode.BILINEAR)
+
 transform = transforms.Compose([
     HE_Normalize(),
     transforms.ToTensor(),
-    CropPatches(kernel_size=512, stride=256),
+    transforms.Resize((256,256)),
+    CropPatches(kernel_size=224, stride=8),
     transforms.Lambda(lambda crops: torch.stack([crop for crop in crops]))
 ])
 
@@ -143,14 +148,14 @@ def main():
     for j, data in enumerate(data_loader, 0):
         x, y = data
         bs, ncrops, c, h, w = x.size()
-        x = torch.reshape(x, (-1, 3, 512, 512))
+        x = torch.reshape(x, (-1, 3, 224, 224))
         y = y.view(-1,1).repeat(1,ncrops).view(-1)
 
         for i in range(x.size(0)):
-            img_id = j * bs + i // 35 + 1
-            crop_id = i % 35 + 1
+            img_id = j * bs + i // ncrops + 1
+            crop_id = i % ncrops + 1
             label = CLASSES[int(y[i])]
-            silo_dir, train_or_valid_or_test_dir = where_to_write(label, i%35==34)
+            silo_dir, train_or_valid_or_test_dir = where_to_write(label, i%ncrops==ncrops-1)
             image_name = PARENT_DIR + '/' + \
                 silo_dir + '/' + \
                 train_or_valid_or_test_dir + '/' + \
