@@ -7,9 +7,9 @@ from tensorflow.keras import layers, models,\
     preprocessing, metrics, losses, optimizers, callbacks, applications
 import numpy as np
 
-
+n_runs = 7
 sweep_config = {
-    'name': 'BACH-centralized-vgg',
+    'name': 'BACH-centralized-vgg-local',
     'method': 'grid',
     'metric': {
         'goal': 'minimize',
@@ -20,8 +20,8 @@ sweep_config = {
         'epochs': {'value': 50},
         'optimizer': {'value': 'adam'},
         'learning_rate': {'values': [1e-9, 1e-8, 1e-7, 1e-6, 1e-5, 1e-4, 1e-3]},
-        'dropout_fc_1': {'values': [.0, .25, .50]},
-        'dropout_fc_2': {'values': [.0, .25, .50]}
+        'dropout_fc_1': {'values': [.0]},
+        'dropout_fc_2': {'values': [.0]}
     }
 }
 
@@ -44,7 +44,11 @@ def main():
     print(f"Mean: {mean}")
     print(f"Var : {variance}")
     print(f"Std : {std}")
-
+    # centralized dataset
+    #Mean: [0.6892141  0.56010664 0.670267  ]
+    #Var : [0.03059223 0.04291156 0.0250392 ]
+    #Std : [0.17490636 0.20715106 0.15823779]
+    
     def train(config=None):
         with wandb.init(config=config):
             config = wandb.config
@@ -67,8 +71,8 @@ def main():
                       callbacks=[
                           WandbCallback(monitor="val_loss", save_model=False, save_graph=False),
                           early_stopping_fn])
-
-    wandb.agent(sweep_id, train, count=45)
+    
+    wandb.agent(sweep_id, train, count=n_runs)
 
 
 def load_dataset(batch_size, seed=int(np.random.random()*100), validation_split=0.2):
